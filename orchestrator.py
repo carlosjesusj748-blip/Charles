@@ -15,6 +15,15 @@ Sua personalidade e tom:
 - Se executar uma ação (como abrir WhatsApp ou buscar dados), reporte com tranquilidade executiva (ex: "Certamente, senhor. Iniciando a comunicação no WhatsApp.").
 - Responda sempre no idioma em que o senhor se comunicar (preferencialmente Português do Brasil)."""
 
+# Modelos recomendados da Groq que suportam Tool Calling comprovadamente
+SUPPORTED_TOOL_MODELS = [
+    "llama-3.1-8b-instant",
+    "llama-3.1-70b-versatile",
+    "llama-3.3-70b-versatile",
+    "llama-3.3-70b-specdec",
+    "mixtral-8x7b-32768"
+]
+
 class CharlesOrchestrator:
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv("GROQ_API_KEY")
@@ -24,17 +33,21 @@ class CharlesOrchestrator:
         self.default_model = "llama-3.1-8b-instant"
 
     async def list_available_models(self) -> List[str]:
-        """Consulta dinamicamente os modelos ativos na conta da Groq."""
+        """Consulta modelos da Groq e filtra estritamente os compatíveis com Tool Calling."""
         try:
             models_response = await self.client.models.list()
-            chat_models = []
-            for m in models_response.data:
-                mid = m.id
-                # Filtra apenas modelos de texto/chat (ignora whisper e guard)
-                if not mid.startswith("whisper") and not "guard" in mid and not "safeguard" in mid:
-                    chat_models.append(mid)
-            return sorted(chat_models) if chat_models else ["llama-3.1-8b-instant", "llama-3.1-70b-versatile"]
-        except Exception as e:
+            active_ids = {m.id for m in models_response.data}
+            
+            # Intersecta com os modelos que suportam Function Calling
+            filtered = [m for m in SUPPORTED_TOOL_MODELS if m in active_ids]
+            
+            # Adiciona outros modelos llama se existirem
+            for mid in active_ids:
+                if mid.startswith("llama-3") and mid not in filtered and "guard" not in mid:
+                    filtered.append(mid)
+
+            return filtered if filtered else ["llama-3.1-8b-instant", "llama-3.1-70b-versatile"]
+        except Exception:
             return ["llama-3.1-8b-instant", "llama-3.1-70b-versatile", "mixtral-8x7b-32768"]
 
     async def transcribe_audio(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
@@ -49,7 +62,6 @@ class CharlesOrchestrator:
             )
             return transcription.text.strip()
         except Exception:
-            # Fallback para whisper-large-v3 padrão se o turbo não estiver liberado na conta
             transcription = await self.client.audio.transcriptions.create(
                 file=(filename, audio_bytes),
                 model="whisper-large-v3",
@@ -61,7 +73,7 @@ class CharlesOrchestrator:
 
     async def chat(self, messages: List[Dict[str, Any]], device_telemetry: Dict[str, Any] = None, selected_model: str = None) -> Tuple[str, List[Dict[str, Any]]]:
         mobile_actions = []
-        target_model = selected_model or self.default_model
+        target_model = selected_model if (selected_model and selected_model in SUPPORTED_TOOL_MODELS) else self.default_model
         
         telemetry_info = ""
         if device_telemetry:
