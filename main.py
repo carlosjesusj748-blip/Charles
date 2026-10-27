@@ -45,31 +45,30 @@ async def health_check():
 
 @app.get("/api/models")
 async def get_models():
-    """Consulta os modelos ativos diretamente na API da Groq."""
     try:
         orch = get_orchestrator()
         models = await orch.list_available_models()
         return {"models": models}
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e), "models": ["llama-3.1-8b-instant", "llama-3.1-70b-versatile"]})
+        return JSONResponse(status_code=500, content={"error": str(e), "models": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]})
 
 @app.post("/api/interact-voice")
 async def interact_voice(
     audio: UploadFile = File(...),
     history: str = Form("[]"),
     telemetry: str = Form("{}"),
-    model: str = Form("llama-3.1-8b-instant")
+    model: str = Form("openai/gpt-oss-120b")
 ):
     try:
         orch = get_orchestrator()
         audio_bytes = await audio.read()
         
-        # 1. Transcrição ultrarrápida via Whisper Turbo
+        # 1. Transcrição de Voz via Groq Whisper
         user_text = await orch.transcribe_audio(audio_bytes, filename=audio.filename or "audio.webm")
         if not user_text:
             return JSONResponse(status_code=400, content={"error": "Nenhuma fala detectada."})
 
-        # 2. Histórico e telemetria
+        # 2. Histórico da conversa
         try:
             conversation_history = json.loads(history)
         except Exception:
@@ -82,12 +81,12 @@ async def interact_voice(
 
         conversation_history.append({"role": "user", "content": user_text})
 
-        # 3. Raciocínio com modelo escolhido
+        # 3. Processamento na IA da Groq
         reply_text, mobile_actions = await orch.chat(conversation_history, device_telemetry, selected_model=model)
 
-        # 4. Síntese de Voz (TTS)
+        # 4. Síntese de Voz com fallback seguro
         tts_audio = await synthesize_speech(reply_text)
-        audio_base64 = base64.b64encode(tts_audio).decode("utf-8")
+        audio_base64 = base64.b64encode(tts_audio).decode("utf-8") if tts_audio else None
 
         return {
             "transcription": user_text,
@@ -97,7 +96,12 @@ async def interact_voice(
         }
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=200, content={
+            "transcription": "Comando recebido",
+            "response_text": f"Peço desculpas, senhor: {str(e)}",
+            "audio_base64": None,
+            "mobile_actions": []
+        })
 
 @app.post("/api/interact-text")
 async def interact_text(request: Request):
@@ -106,7 +110,7 @@ async def interact_text(request: Request):
         user_text = data.get("text", "").strip()
         history = data.get("history", [])
         device_telemetry = data.get("telemetry", {})
-        model = data.get("model", "llama-3.1-8b-instant")
+        model = data.get("model", "openai/gpt-oss-120b")
 
         if not user_text:
             return JSONResponse(status_code=400, content={"error": "Texto vazio."})
@@ -117,7 +121,7 @@ async def interact_text(request: Request):
         reply_text, mobile_actions = await orch.chat(history, device_telemetry, selected_model=model)
         
         tts_audio = await synthesize_speech(reply_text)
-        audio_base64 = base64.b64encode(tts_audio).decode("utf-8")
+        audio_base64 = base64.b64encode(tts_audio).decode("utf-8") if tts_audio else None
 
         return {
             "response_text": reply_text,
@@ -125,4 +129,8 @@ async def interact_text(request: Request):
             "mobile_actions": mobile_actions
         }
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=200, content={
+            "response_text": f"Peço desculpas, senhor: {str(e)}",
+            "audio_base64": None,
+            "mobile_actions": []
+        })

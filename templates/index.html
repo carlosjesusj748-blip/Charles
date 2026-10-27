@@ -596,7 +596,7 @@
         if (response.ok) {
           appendMessage('USER', data.transcription);
           appendMessage('CHARLES', data.response_text, data.mobile_actions);
-          playAudio(data.audio_base64);
+          playAudio(data.audio_base64, data.response_text);
           document.getElementById('latencyTag').innerText = `LATÊNCIA: ${duration}ms (${modelSelect.value})`;
         } else {
           appendMessage('CHARLES', 'Peço desculpas, senhor: ' + (data.error || 'Erro operacional.'));
@@ -634,7 +634,7 @@
 
         if (response.ok) {
           appendMessage('CHARLES', data.response_text, data.mobile_actions);
-          playAudio(data.audio_base64);
+          playAudio(data.audio_base64, data.response_text);
           document.getElementById('latencyTag').innerText = `LATÊNCIA: ${duration}ms (${modelSelect.value})`;
         } else {
           appendMessage('CHARLES', 'Erro de sistema: ' + data.error);
@@ -673,10 +673,25 @@
       if (conversationHistory.length > 12) conversationHistory.shift();
     }
 
-    function playAudio(base64Audio) {
-      if (!base64Audio) return;
-      audioPlayer.src = "data:audio/mp3;base64," + base64Audio;
-      audioPlayer.play().catch(e => console.log("Áudio bloqueado:", e));
+    function playAudio(base64Audio, fallbackText = '') {
+      if (base64Audio) {
+        audioPlayer.src = "data:audio/mp3;base64," + base64Audio;
+        audioPlayer.play().catch(e => speakNatively(fallbackText));
+      } else if (fallbackText) {
+        speakNatively(fallbackText);
+      }
+    }
+
+    function speakNatively(text) {
+      if ('speechSynthesis' in window && text) {
+        window.speechSynthesis.cancel();
+        const cleanText = text.replace(/[*#_`]/g, '');
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = 'pt-BR';
+        utterance.rate = 1.05;
+        utterance.pitch = 0.95; // Tom britânico sutil e firme
+        window.speechSynthesis.speak(utterance);
+      }
     }
 
     // 5. Wake-word
