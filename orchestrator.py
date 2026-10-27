@@ -24,10 +24,10 @@ class CharlesOrchestrator:
         self.model = "llama-3.3-70b-versatile"
 
     async def transcribe_audio(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
-        """Envia o áudio gravado para a Groq Whisper-large-v3 para transcrição ultrarrápida."""
+        """Envia o áudio gravado para a Groq Whisper-large-v3-turbo para transcrição ultrarrápida."""
         transcription = await self.client.audio.transcriptions.create(
             file=(filename, audio_bytes),
-            model="whisper-large-v3",
+            model="whisper-large-v3-turbo",
             response_format="verbose_json",
             language="pt",
             temperature=0.0
