@@ -1,0 +1,24 @@
+{
+  "name": "C.H.A.R.L.E.S. AI",
+  "short_name": "Charles",
+  "description": "Sistema Operacional e Assistente Pessoal Autônomo com Voz",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030a16",
+  "theme_color": "#020912",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
