@@ -21,7 +21,6 @@
       --bg: #030a16;
       --panel: rgba(4, 18, 36, 0.75);
       --border: rgba(0, 243, 255, 0.28);
-      --hud-gold: #ffcc00;
     }
 
     * {
@@ -154,35 +153,60 @@
       box-shadow: 0 0 30px rgba(255, 51, 68, 0.6);
     }
 
-    /* Wake-Word Toggle Banner */
-    .wakeword-banner {
+    /* Wake-Word Toggle & Model Selector Banner */
+    .controls-banner {
       width: 100%;
       max-width: 650px;
       background: rgba(0, 243, 255, 0.08);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 6px 12px;
+      padding: 8px 12px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-size: 0.9rem;
       margin-bottom: 0.6rem;
+      gap: 10px;
+      flex-wrap: wrap;
     }
 
-    .wakeword-banner span {
-      color: #9eccfc;
+    .model-selector-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .model-selector-box label {
+      font-size: 0.8rem;
+      color: #79a8d7;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .model-dropdown {
+      background: rgba(2, 17, 36, 0.95);
+      border: 1px solid var(--primary);
+      color: var(--primary);
+      font-family: 'Rajdhani', sans-serif;
+      font-weight: 700;
+      font-size: 0.85rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      outline: none;
+      cursor: pointer;
     }
 
     .toggle-btn {
       background: rgba(0, 243, 255, 0.2);
       border: 1px solid var(--primary);
       color: var(--primary);
-      padding: 4px 10px;
+      padding: 5px 12px;
       border-radius: 12px;
       font-family: 'Rajdhani', sans-serif;
       font-weight: 700;
       cursor: pointer;
       font-size: 0.8rem;
+      transition: all 0.2s;
     }
 
     .toggle-btn.active {
@@ -347,15 +371,23 @@
     </div>
   </div>
 
-  <div class="wakeword-banner">
-    <span>Comando de Voz: diga <strong>"Charles..."</strong></span>
-    <button class="toggle-btn" id="wakeToggle">ATIVAR ESCUTA CONTÍNUA</button>
+  <div class="controls-banner">
+    <div class="model-selector-box">
+      <label for="modelSelect">Cérebro:</label>
+      <select id="modelSelect" class="model-dropdown">
+        <option value="llama-3.1-8b-instant" selected>Llama 3.1 8B (Ultra Rápido)</option>
+        <option value="llama-3.1-70b-versatile">Llama 3.1 70B (Versátil)</option>
+        <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
+        <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+      </select>
+    </div>
+    <button class="toggle-btn" id="wakeToggle">ESCUTA: "CHARLES"</button>
   </div>
 
   <div class="hud-display" id="hud">
     <div class="hud-title">
       <span>Diagnóstico Operacional</span>
-      <span id="latencyTag">NÚCLEO GROQ LLAMA 3.3</span>
+      <span id="latencyTag">SISTEMA ATIVO</span>
     </div>
     <div class="chat-msg charles">
       <strong>CHARLES:</strong> À sua inteira disposição, senhor. Todos os subsistemas estão calibrados. Como posso assisti-lo hoje?
@@ -379,6 +411,7 @@
     const audioPlayer = document.getElementById('audioPlayer');
     const wakeToggle = document.getElementById('wakeToggle');
     const batteryTag = document.getElementById('batteryTag');
+    const modelSelect = document.getElementById('modelSelect');
 
     let isRecording = false;
     let mediaRecorder = null;
@@ -387,32 +420,70 @@
     let isWakeWordActive = false;
     let speechRecognizer = null;
     let deviceTelemetry = { battery: '100%', connection: 'Online' };
+    let audioCtx = null;
 
-    // 1. Som sci-fi sintetizado nativamente (Web Audio API)
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Inicializa AudioContext após gesto do usuário para evitar avisos no navegador
+    function getAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
     function playSciFiChime(type = 'activate') {
       try {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
+        const ctx = getAudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
         osc.connect(gain);
-        gain.connect(audioCtx.destination);
+        gain.connect(ctx.destination);
 
         if (type === 'activate') {
-          osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15);
+          osc.frequency.setValueAtTime(440, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
         } else {
-          osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.15);
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
         }
 
-        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
         osc.start();
-        osc.stop(audioCtx.currentTime + 0.16);
+        osc.stop(ctx.currentTime + 0.16);
       } catch (e) {}
     }
 
-    // 2. Telemetria de Bateria
+    // Carrega modelos dinâmicos da Groq
+    async function fetchAvailableModels() {
+      try {
+        const res = await fetch('/api/models');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.models && data.models.length > 0) {
+            const currentVal = modelSelect.value;
+            modelSelect.innerHTML = '';
+            data.models.forEach(m => {
+              const opt = document.createElement('option');
+              opt.value = m;
+              opt.innerText = m;
+              if (m === 'llama-3.1-8b-instant') opt.selected = true;
+              modelSelect.appendChild(opt);
+            });
+            if (data.models.includes(currentVal)) {
+              modelSelect.value = currentVal;
+            }
+          }
+        }
+      } catch (e) {
+        console.log("Usando modelos padrão de fallback.");
+      }
+    }
+    fetchAvailableModels();
+
+    // Telemetria de Bateria
     if ('getBattery' in navigator) {
       navigator.getBattery().then(batt => {
         function updateBattery() {
@@ -426,7 +497,6 @@
       });
     }
 
-    // 3. Gravador de Áudio de Alta Fidelidade
     async function startRecording() {
       if (isRecording) return;
       try {
@@ -471,6 +541,7 @@
       formData.append('audio', audioBlob, 'voice.webm');
       formData.append('history', JSON.stringify(conversationHistory));
       formData.append('telemetry', JSON.stringify(deviceTelemetry));
+      formData.append('model', modelSelect.value);
 
       const startTime = performance.now();
 
@@ -487,7 +558,7 @@
           appendMessage('USER', data.transcription);
           appendMessage('CHARLES', data.response_text, data.mobile_actions);
           playAudio(data.audio_base64);
-          document.getElementById('latencyTag').innerText = `RESPOSTA: ${duration}ms`;
+          document.getElementById('latencyTag').innerText = `LATÊNCIA: ${duration}ms (${modelSelect.value})`;
         } else {
           appendMessage('CHARLES', 'Peço desculpas, senhor: ' + (data.error || 'Erro operacional.'));
         }
@@ -505,6 +576,7 @@
 
       appendMessage('USER', text);
       statusText.innerText = "PROCESSANDO...";
+      const startTime = performance.now();
 
       try {
         const response = await fetch('/api/interact-text', {
@@ -513,14 +585,18 @@
           body: JSON.stringify({
             text: text,
             history: conversationHistory,
-            telemetry: deviceTelemetry
+            telemetry: deviceTelemetry,
+            model: modelSelect.value
           })
         });
 
         const data = await response.json();
+        const duration = Math.round(performance.now() - startTime);
+
         if (response.ok) {
           appendMessage('CHARLES', data.response_text, data.mobile_actions);
           playAudio(data.audio_base64);
+          document.getElementById('latencyTag').innerText = `LATÊNCIA: ${duration}ms (${modelSelect.value})`;
         } else {
           appendMessage('CHARLES', 'Erro de sistema: ' + data.error);
         }
@@ -564,7 +640,7 @@
       audioPlayer.play().catch(e => console.log("Áudio bloqueado:", e));
     }
 
-    // 4. Detecção da Palavra de Ativação ("Charles")
+    // Detecção da Palavra de Ativação ("Charles")
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       speechRecognizer = new SpeechRecognition();
@@ -574,12 +650,11 @@
 
       speechRecognizer.onresult = (event) => {
         const lastResult = event.results[event.results.length - 1][0].transcript.toLowerCase();
-        console.log("Reconhecido no ambiente:", lastResult);
         if (lastResult.includes('charles') && !isRecording) {
           startRecording();
           setTimeout(() => {
             if (isRecording) stopRecording();
-          }, 6000); // grava por até 6s após a ativação
+          }, 6000);
         }
       };
 
@@ -590,17 +665,17 @@
 
     wakeToggle.addEventListener('click', () => {
       if (!speechRecognizer) {
-        alert("Reconhecimento de fala contínuo não suportado neste navegador. Use o botão do Reator Arc.");
+        alert("Reconhecimento contínuo não suportado neste navegador. Use o botão do Reator Arc.");
         return;
       }
       isWakeWordActive = !isWakeWordActive;
       if (isWakeWordActive) {
         wakeToggle.classList.add('active');
-        wakeToggle.innerText = 'ESCUTA ATIVA ("CHARLES")';
+        wakeToggle.innerText = 'ESCUTA ATIVA';
         speechRecognizer.start();
       } else {
         wakeToggle.classList.remove('active');
-        wakeToggle.innerText = 'ATIVAR ESCUTA CONTÍNUA';
+        wakeToggle.innerText = 'ESCUTA: "CHARLES"';
         speechRecognizer.stop();
       }
     });
@@ -611,7 +686,6 @@
       if (e.key === 'Enter') sendTextMessage();
     });
 
-    // Registra Service Worker para PWA instalável no celular
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/static/sw.js').catch(err => console.log('SW falhou:', err));

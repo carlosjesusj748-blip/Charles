@@ -37,24 +37,34 @@ def get_orchestrator():
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Página principal da interface PWA/Web do Charles."""
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/health")
 async def health_check():
-    return {"status": "online", "system": "C.H.A.R.L.E.S. Operational Core", "engine": "Groq Llama 3.3 70B"}
+    return {"status": "online", "system": "C.H.A.R.L.E.S. Operational Core"}
+
+@app.get("/api/models")
+async def get_models():
+    """Consulta os modelos ativos diretamente na API da Groq."""
+    try:
+        orch = get_orchestrator()
+        models = await orch.list_available_models()
+        return {"models": models}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e), "models": ["llama-3.1-8b-instant", "llama-3.1-70b-versatile"]})
 
 @app.post("/api/interact-voice")
 async def interact_voice(
     audio: UploadFile = File(...),
     history: str = Form("[]"),
-    telemetry: str = Form("{}")
+    telemetry: str = Form("{}"),
+    model: str = Form("llama-3.1-8b-instant")
 ):
     try:
         orch = get_orchestrator()
         audio_bytes = await audio.read()
         
-        # 1. Transcrição ultrarrápida via Groq Whisper
+        # 1. Transcrição ultrarrápida via Whisper Turbo
         user_text = await orch.transcribe_audio(audio_bytes, filename=audio.filename or "audio.webm")
         if not user_text:
             return JSONResponse(status_code=400, content={"error": "Nenhuma fala detectada."})
@@ -72,8 +82,8 @@ async def interact_voice(
 
         conversation_history.append({"role": "user", "content": user_text})
 
-        # 3. Raciocínio com Persona Charles + Function Calling
-        reply_text, mobile_actions = await orch.chat(conversation_history, device_telemetry)
+        # 3. Raciocínio com modelo escolhido
+        reply_text, mobile_actions = await orch.chat(conversation_history, device_telemetry, selected_model=model)
 
         # 4. Síntese de Voz (TTS)
         tts_audio = await synthesize_speech(reply_text)
@@ -96,6 +106,7 @@ async def interact_text(request: Request):
         user_text = data.get("text", "").strip()
         history = data.get("history", [])
         device_telemetry = data.get("telemetry", {})
+        model = data.get("model", "llama-3.1-8b-instant")
 
         if not user_text:
             return JSONResponse(status_code=400, content={"error": "Texto vazio."})
@@ -103,7 +114,7 @@ async def interact_text(request: Request):
         orch = get_orchestrator()
         history.append({"role": "user", "content": user_text})
         
-        reply_text, mobile_actions = await orch.chat(history, device_telemetry)
+        reply_text, mobile_actions = await orch.chat(history, device_telemetry, selected_model=model)
         
         tts_audio = await synthesize_speech(reply_text)
         audio_base64 = base64.b64encode(tts_audio).decode("utf-8")

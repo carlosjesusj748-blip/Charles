@@ -21,25 +21,47 @@ class CharlesOrchestrator:
         if not self.api_key:
             raise ValueError("GROQ_API_KEY não foi encontrada nas variáveis de ambiente.")
         self.client = AsyncGroq(api_key=self.api_key)
-        self.model = "llama-3.3-70b-versatile"
+        self.default_model = "llama-3.1-8b-instant"
+
+    async def list_available_models(self) -> List[str]:
+        """Consulta dinamicamente os modelos ativos na conta da Groq."""
+        try:
+            models_response = await self.client.models.list()
+            chat_models = []
+            for m in models_response.data:
+                mid = m.id
+                # Filtra apenas modelos de texto/chat (ignora whisper e guard)
+                if not mid.startswith("whisper") and not "guard" in mid and not "safeguard" in mid:
+                    chat_models.append(mid)
+            return sorted(chat_models) if chat_models else ["llama-3.1-8b-instant", "llama-3.1-70b-versatile"]
+        except Exception as e:
+            return ["llama-3.1-8b-instant", "llama-3.1-70b-versatile", "mixtral-8x7b-32768"]
 
     async def transcribe_audio(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
-        """Envia o áudio gravado para a Groq Whisper-large-v3-turbo para transcrição ultrarrápida."""
-        transcription = await self.client.audio.transcriptions.create(
-            file=(filename, audio_bytes),
-            model="whisper-large-v3-turbo",
-            response_format="verbose_json",
-            language="pt",
-            temperature=0.0
-        )
-        return transcription.text.strip()
+        """Envia o áudio gravado para a Groq Whisper-large-v3-turbo."""
+        try:
+            transcription = await self.client.audio.transcriptions.create(
+                file=(filename, audio_bytes),
+                model="whisper-large-v3-turbo",
+                response_format="verbose_json",
+                language="pt",
+                temperature=0.0
+            )
+            return transcription.text.strip()
+        except Exception:
+            # Fallback para whisper-large-v3 padrão se o turbo não estiver liberado na conta
+            transcription = await self.client.audio.transcriptions.create(
+                file=(filename, audio_bytes),
+                model="whisper-large-v3",
+                response_format="verbose_json",
+                language="pt",
+                temperature=0.0
+            )
+            return transcription.text.strip()
 
-    async def chat(self, messages: List[Dict[str, Any]], device_telemetry: Dict[str, Any] = None) -> Tuple[str, List[Dict[str, Any]]]:
-        """
-        Executa a conversa com suporte a Function Calling no Llama 3.3.
-        Injeta telemetria do celular/PC no contexto de sistema se fornecido.
-        """
+    async def chat(self, messages: List[Dict[str, Any]], device_telemetry: Dict[str, Any] = None, selected_model: str = None) -> Tuple[str, List[Dict[str, Any]]]:
         mobile_actions = []
+        target_model = selected_model or self.default_model
         
         telemetry_info = ""
         if device_telemetry:
@@ -49,7 +71,7 @@ class CharlesOrchestrator:
         payload_messages = [{"role": "system", "content": system_message}] + messages
 
         response = await self.client.chat.completions.create(
-            model=self.model,
+            model=target_model,
             messages=payload_messages,
             tools=TOOL_DEFINITIONS,
             tool_choice="auto",
@@ -59,7 +81,6 @@ class CharlesOrchestrator:
 
         response_message = response.choices[0].message
 
-        # Execução de ferramentas via Function Calling
         if response_message.tool_calls:
             payload_messages.append(response_message)
             
@@ -82,7 +103,7 @@ class CharlesOrchestrator:
                 })
 
             final_response = await self.client.chat.completions.create(
-                model=self.model,
+                model=target_model,
                 messages=payload_messages,
                 temperature=0.3,
                 max_tokens=350
@@ -95,7 +116,6 @@ class CharlesOrchestrator:
         return clean_text, mobile_actions
 
     def _sanitize_for_tts(self, text: str) -> str:
-        """Remove markdown desnecessário para a leitura fluir como fala humana."""
         text = re.sub(r'[*#_`]', '', text)
         text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
         return text.strip()
